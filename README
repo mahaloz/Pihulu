@@ -1,0 +1,27 @@
+TODO: Bassicly we need to finish the setter program
+
+The blocker program takes in a program and dumps all the jmps, then removes all
+the unconditional jmps. Then outputs to a jmps.txt file.
+
+blocker.py ------> jmps.txt (full of addresses gdb ready)
+
+The tracer program takes the jmps.txt and runs a break at each point in the target
+file through gdb. The program also does math at each stop to determine the path 
+diversity.
+	
+jmps.txt ----> tracer.py -----> gdb 
+
+The setter program essentialy imports the tracer.py program into gdb to allow it to
+call python methods for math. The setter also creates the stop hooks that invoke
+the path_math() method.
+
+setter.gdbinit<>---------<>gdb<>-------<-----tracer.py
+
+In full the program works like this so far:
+
+target --> blocker --> jmps.txt --> tracer <--\
+|                                     ||      | 
+|				      \/   setter
+\----------------------------------> GDB <----/
+
+yup.						
