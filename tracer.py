@@ -8,7 +8,7 @@ from collections import deque
 import re # used to sort trough objdump
 import subprocess
 import os
-from shutil import copy
+import shutil
 import sys
 import time
 from random import *
@@ -59,7 +59,10 @@ def closer(reason):
 	global out_dir
 	# check if a crash happened
 	if(reason == "SIGSEGV"):
-		copy(cur_file, out_dir)
+		print("SIG FOUND ===================================================")
+		#TODO put out_DIR back
+		print(cur_file)
+		os.system('cp '+ cur_file +' out_dir/'+cur_file[7:len(cur_file)])
 
 	# reset previous location for first run
 	prev_location = 0
@@ -152,24 +155,28 @@ def mutate(arg_file,bit,mute):
 	
 	# SINGLE BIT FLIP
 	if(mute == 0):
+		print("SINGLE STEP")
 		flip_bit(all_bytes, bit)
+
 	# ADDITION
 	if(mute == 1):
+		print("ADDITION")
 		for adj in range(0, len(all_bytes)*35):
 			position = int(adj / 35)
 			all_bytes[position] = (all_bytes[position] + (adj % 35))%255 
 	# SUBTRACTION
 	if(mute == 2):
+		print("SUBTRACTION")
 		for adj in range(0, len(all_bytes)*35):
                         position = int(adj / 35)
                         all_bytes[position] = (all_bytes[position] - (adj % 35))%255
-
+	#TODO output to queue
 	# Output mutated program with new name
-	output_name = arg_file + str(time.time())
+	output_name = "/home/mahalo/Pihulu/v_3/queue/mute" + str(time.time())
 	with open(output_name, 'wb') as file:
 		file.write(all_bytes)
 	return output_name;
-
+	
 # loops program
 def program_looper():
 	global in_loc
@@ -191,7 +198,8 @@ def program_looper():
 				
 				#trace effects
 				opener(mutated_file)
-				unique = path_unique()		
+				unique = path_unique()
+				time.sleep(.1)		
 				if(unique):
 					print("-----------------UNIQUE------------------")
 					queue.append(mutated_file)
