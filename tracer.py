@@ -26,6 +26,9 @@ cur_file = '.'
 out_dir = args[1]
 target = args[0]
 
+# create output dir
+if(not os.path.exists(out_dir)):
+	os.makedirs(out_dir,mode=0o777)
 
 # objdump on the target binary
 objdump = subprocess.Popen(['objdump', '-d', '-M', 'intel', target], stdout=subprocess.PIPE)
@@ -40,13 +43,14 @@ for jmp in jmps_all:
         	jmps.append("0x"+jmp[0]) # prepend hex type
         # call a break at every conditional jmp address
 for jmp in jmps:
-	gdb.execute("break *"+jmp)
+	gdb.execute("break *"+jmp,to_string=True)
 
 # starts process
 def opener(input_file):
 	global shared_mem
 	shared_mem = [0]*(64*1024)
-	gdb.execute("run " +"<"+ input_file)
+	
+	gdb.execute("run " +"<"+ input_file,to_string=True)
 	path_math()
 	return;
 # closes process
@@ -59,11 +63,13 @@ def closer(reason):
 	global out_dir
 	# check if a crash happened
 	if(reason == "SIGSEGV"):
-		print("SIG FOUND ===================================================")
-		#TODO put out_DIR back
-		print(cur_file)
-		os.system('cp '+ cur_file +' out_dir/'+cur_file[7:len(cur_file)])
-
+		print("SIG FOUND")
+		os.system('cp '+ cur_file + ' ' + out_dir+cur_file[7:len(cur_file)])
+		print("curent file:"+cur_file)
+		with open(cur_file,'rb') as file:
+			temp = file.read()
+			print("file name:")
+			print(temp)
 	# reset previous location for first run
 	prev_location = 0
 	
@@ -72,8 +78,9 @@ def closer(reason):
 	for counter, value in enumerate(shared_mem):
 		if(value != 0):
 			tup_str += str(counter)+":"+str(value)+" "
+	
 	# put ever shared_mem into an array
-	mem_map.append(tup_str)
+	#mem_map.append(tup_str)
 	return; 
 
 def reason():
@@ -100,6 +107,7 @@ def path_math():
 	global shared_mem
 	res = reason()
 	if(res == 'SIGSEGV'):
+		print("*"*1000)
 		closer(res)
 		return;
 	# get the current position through the pointer counter
@@ -117,12 +125,11 @@ def path_math():
 
 		# derived from afl-fuzz to create map
 		cur_location = int(pc,0)
-		print(cur_location)
 		shared_mem[(cur_location ^ prev_location)%(64000)] += 1
 		prev_location = cur_location >> 1  
 
 		# continue to next break
-		gdb.execute("continue")
+		gdb.execute("continue",to_string=True)
 		path_math()
 		return;
 
@@ -135,10 +142,12 @@ def path_unique():
 	paths = mem_map
 	cur_path = tup_str
 	
+	
 	# compare our current path and all paths
-	for path in mem_map:
+	for path in paths:
 		if(cur_path == path):
 			unique = False
+	mem_map.append(tup_str)
 	return unique;
 
 def mutate(arg_file,bit,mute):
@@ -161,52 +170,78 @@ def mutate(arg_file,bit,mute):
 	# ADDITION
 	if(mute == 1):
 		print("ADDITION")
-		for adj in range(0, len(all_bytes)*35):
-			position = int(adj / 35)
-			all_bytes[position] = (all_bytes[position] + (adj % 35))%255 
+		position = int(bit / 35)
+		all_bytes[position] = (all_bytes[position] + (bit % 35))%255 
 	# SUBTRACTION
 	if(mute == 2):
 		print("SUBTRACTION")
-		for adj in range(0, len(all_bytes)*35):
-                        position = int(adj / 35)
-                        all_bytes[position] = (all_bytes[position] - (adj % 35))%255
-	#TODO output to queue
+		position = int(bit / 35)
+		all_bytes[position] = (all_bytes[position] - (bit % 35))%255	
+		
 	# Output mutated program with new name
-	output_name = "/home/mahalo/Pihulu/v_3/queue/mute" + str(time.time())
+
+	output_name = arg_file  + str(time.time())
 	with open(output_name, 'wb') as file:
 		file.write(all_bytes)
 	return output_name;
 	
 # loops program
 def program_looper():
-	global in_loc
 	global cur_file
 	print("LOOPER STARTING...")
-	queue = deque(os.listdir('queue'))
+	queue = deque(os.listdir('/queue'))
 	while(len(queue)>0):
-		cur_file = "queue/" + queue.popleft()
+		cur_file = '/queue/'+queue.popleft()
 
 		# get bytes of file
 		cur_bytes = []
 		with open(cur_file, 'rb') as file:
 			cur_bytes = bytearray(file.read())
-		for mute in range(0,2):
-			# go through each byte
-			for bit in range(0, len(cur_bytes)*8):
-				# mutate file
-				mutated_file = mutate(cur_file,bit,mute)
-				
-				#trace effects
-				opener(mutated_file)
-				unique = path_unique()
-				time.sleep(.1)		
-				if(unique):
-					print("-----------------UNIQUE------------------")
-					queue.append(mutated_file)
-				else:
-					print("+++++++++++++++++DELETED+++++++++++++++++")
-					os.remove(mutated_file)
-				
+		
+		print("||||||||||||||||||||||||||FLIP START|||||||||||||||||||||")
+		for bit in range(0, len(cur_bytes)*8):
+			# mutate file
+			mutated_file = mutate(cur_file,bit,0)
+			
+			#trace effects
+			opener(mutated_file)
+			unique = path_unique()	
+			if(unique):
+				print("-----------------UNIQUE------------------")
+				queue.append(mutated_file[6:len(mutated_file)])
+			else:
+				print("+++++++++++++++++DELETED+++++++++++++++++")
+				os.remove(mutated_file)
+		print("++++++++++++++++++++++ADDITION START+++++++++++++++++++++++++")
+		for bit in range(0, len(cur_bytes)*35):
+			# mutate file
+			mutated_file = mutate(cur_file,bit,1)
+			
+			#trace effects
+			opener(mutated_file)
+			unique = path_unique()	
+			if(unique):
+				print("-----------------UNIQUE------------------")
+				queue.append(mutated_file[6:len(mutated_file)])
+			else:
+				print("+++++++++++++++++DELETED+++++++++++++++++")
+				os.remove(mutated_file)
+		
+		print("----------------------SUBTRACTIONS START---------------------")
+		for bit in range(0, len(cur_bytes)*35):
+			# mutate file
+			mutated_file = mutate(cur_file,bit,2)
+			
+			#trace effects
+			opener(mutated_file)
+			unique = path_unique()	
+			if(unique):
+				print("-----------------UNIQUE------------------")
+				queue.append(mutated_file[6:len(mutated_file)])
+			else:
+				print("+++++++++++++++++DELETED+++++++++++++++++")
+				os.remove(mutated_file)
+			
 	return;
 
 program_looper()
